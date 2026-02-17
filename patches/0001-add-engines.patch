@@ -1,0 +1,9 @@
+*** Begin Patch
+*** Update File: package.json
+@@
+-  "type": "module",
++  "type": "module",
++  "engines": {
++    "node": "18.x"
++  },
+*** End Patch
