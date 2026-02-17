@@ -1,7 +1,11 @@
 import cors from "cors";
-import { CLIENT_URL } from "./env.js";
+import { CLIENT_URL, ALLOWED_ORIGINS } from "./env.js";
 
-const allowedOrigins = [CLIENT_URL, "https://deftship.vercel.app"].filter(Boolean);
+const envOrigins = ALLOWED_ORIGINS
+  ? ALLOWED_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
+  : [];
+
+export const allowedOrigins = Array.from(new Set([...envOrigins, CLIENT_URL].filter(Boolean)));
 
 export const corsConfig = cors({
   origin(origin, callback) {
