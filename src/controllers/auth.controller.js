@@ -1,7 +1,7 @@
  import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Admin from "../models/Admin.model.js";
-import { JWT_SECRET, JWT_EXPIRES_IN } from "../config/env.js";
+import { JWT_SECRET, JWT_EXPIRES_IN, NODE_ENV } from "../config/env.js";
 
 export const loginAdmin = async (req, res) => {
   const { email, password } = req.body;
@@ -22,11 +22,13 @@ export const loginAdmin = async (req, res) => {
     { expiresIn: JWT_EXPIRES_IN }
   );
 
-  res.cookie("adminToken", token, {
+  const cookieOptions = {
     httpOnly: true,
-    sameSite: "strict",
-    secure: false // set true in production (HTTPS)
-  });
+    sameSite: NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: NODE_ENV === 'production'
+  };
+
+  res.cookie("adminToken", token, cookieOptions);
 
   res.json({ message: "Login successful" });
 };
