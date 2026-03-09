@@ -6,7 +6,13 @@ import { JWT_SECRET, JWT_EXPIRES_IN, NODE_ENV } from "../config/env.js";
 export const loginAdmin = async (req, res) => {
   const { email, password } = req.body;
 
-  const admin = await Admin.findOne({ email });
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email and password are required" });
+  }
+
+  const normalizedEmail = typeof email === 'string' ? email.toLowerCase() : email;
+
+  const admin = await Admin.findOne({ email: normalizedEmail });
   if (!admin) {
     return res.status(401).json({ message: "Invalid credentials" });
   }

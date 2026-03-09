@@ -53,6 +53,109 @@ const seed = async () => {
     console.log("Seeded package with tracking number:", pkgData.trackingNumber);
   }
 
+  // Additional seed provided by user
+  const packageSeed = {
+    itemName: "Electronics & Fashion Package",
+
+    trackingNumber: "DFT9382746FRUS",
+
+    description:
+      "International shipment containing electronics and clothing items from France warehouse to Miami Beach customer.",
+
+    receiverPhone: "+13055542198",
+
+    deliveryTime: new Date("2026-03-25T16:00:00Z"),
+
+    status: "in-transit",
+
+    origin: {
+      lat: 45.8029719,
+      lng: 3.169343,
+      address: "ZAC des Gravanches, 63370 Malintrat, France"
+    },
+
+    destination: {
+      lat: 25.798778,
+      lng: -80.127191,
+      address: "2301 Collins Ave APT 325, Miami Beach, FL 33139, USA"
+    },
+
+    currentLocation: {
+      lat: 40.712776,
+      lng: -74.005974,
+      updatedAt: new Date()
+    },
+
+    paused: false,
+
+    estimatedDeliveryTime: new Date("2026-03-25T16:00:00Z"),
+
+    distanceKm: 7345,
+
+    baseValue: 250,
+
+    shippingCost: 120,
+
+    currency: "USD",
+
+    items: [
+      {
+        name: "Apple MacBook Pro 14-inch",
+        description: "Laptop with M3 chip and 16GB RAM",
+        value: 2100,
+        images: [
+          {
+            public_id: "packages/macbook1",
+            secure_url:
+              "https://res.cloudinary.com/demo/image/upload/macbook.jpg"
+          }
+        ]
+      },
+      {
+        name: "Louis Vuitton Leather Wallet",
+        description: "Premium leather wallet from Paris boutique",
+        value: 650,
+        images: [
+          {
+            public_id: "packages/wallet1",
+            secure_url:
+              "https://res.cloudinary.com/demo/image/upload/wallet.jpg"
+          }
+        ]
+      },
+      {
+        name: "Nike Air Max Sneakers",
+        description: "Limited edition sneakers",
+        value: 180,
+        images: [
+          {
+            public_id: "packages/shoes1",
+            secure_url:
+              "https://res.cloudinary.com/demo/image/upload/shoes.jpg"
+          }
+        ]
+      }
+    ],
+
+    images: [
+      {
+        public_id: "packages/box1",
+        secure_url:
+          "https://res.cloudinary.com/demo/image/upload/box.jpg"
+      }
+    ]
+  };
+
+  const existing2 = await Package.findOne({ trackingNumber: packageSeed.trackingNumber });
+  if (existing2) {
+    Object.assign(existing2, packageSeed);
+    await existing2.save();
+    console.log('Updated package with tracking number:', packageSeed.trackingNumber);
+  } else {
+    await Package.create(packageSeed);
+    console.log('Seeded package with tracking number:', packageSeed.trackingNumber);
+  }
+
   process.exit(0);
 };
 
