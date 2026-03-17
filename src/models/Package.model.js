@@ -42,6 +42,17 @@ const PackageSchema = new mongoose.Schema(
       }
     ],
 
+    videos: [
+      {
+        public_id: String,
+        secure_url: String,
+        resource_type: String,
+        format: String,
+        duration: Number,
+        bytes: Number
+      }
+    ],
+
     items: [
       {
         name: { type: String, required: true, trim: true },

@@ -4,10 +4,10 @@ import streamifier from "streamifier";
 import { estimateFlightEta } from "../services/package.service.js";
 
 /* Helper to upload buffer */
-const uploadFromBuffer = (buffer) =>
+const uploadFromBuffer = (buffer, options = {}) =>
   new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { folder: "packages" },
+      { folder: "packages", resource_type: "auto", ...options },
       (error, result) => {
         if (result) resolve(result);
         else reject(error);
@@ -15,6 +15,60 @@ const uploadFromBuffer = (buffer) =>
     );
     streamifier.createReadStream(buffer).pipe(stream);
   });
+
+const toCloudinaryAsset = (uploaded) => ({
+  public_id: uploaded.public_id,
+  secure_url: uploaded.secure_url,
+  resource_type: uploaded.resource_type,
+  format: uploaded.format,
+  duration: uploaded.duration,
+  bytes: uploaded.bytes
+});
+
+const normalizeMediaList = (media = []) =>
+  media.map((asset) => {
+    if (!asset) return asset;
+    if (typeof asset === "string") return { secure_url: asset };
+    return asset;
+  });
+
+const normalizeItemList = (items = [], fallbackItemName) => {
+  let normalized = items;
+
+  if ((!normalized || !normalized.length) && fallbackItemName) {
+    normalized = [{ name: fallbackItemName }];
+  }
+
+  if (normalized && typeof normalized === "string") {
+    try {
+      const parsed = JSON.parse(normalized);
+      if (Array.isArray(parsed)) normalized = parsed;
+    } catch (e) {
+      normalized = normalized.split(",").map((s) => ({ name: s.trim() }));
+    }
+  }
+
+  if (!Array.isArray(normalized)) return normalized;
+
+  return normalized.map((it) => {
+    if (!it) return it;
+    if (typeof it === "string") return { name: it, images: [] };
+    const obj = { ...it };
+    obj.images = normalizeMediaList(obj.images || []);
+    return obj;
+  });
+};
+
+const normalizePackageOutput = (pkg) => {
+  const out = pkg?.toObject ? pkg.toObject() : pkg;
+  if (!out) return out;
+
+  out.images = normalizeMediaList(out.images || []);
+  out.videos = normalizeMediaList(out.videos || []);
+  out.items = normalizeItemList(out.items, out.itemName);
+
+  return out;
+};
 
 export const createPackage = async (req, res) => {
   const {
@@ -38,20 +92,25 @@ export const createPackage = async (req, res) => {
     currency
   } = req.body;
 
-  // handle multipart files: package-level images in field 'images', per-item files named 'itemImage-<index>'
+  // handle multipart files: package-level images/videos and per-item files named 'itemImage-<index>'
   const packageImages = [];
+  const packageVideos = [];
   const itemFilesMap = {}; // index -> array of uploaded file objects
   if (req.files && req.files.length) {
     for (const file of req.files) {
-      const uploaded = await uploadFromBuffer(file.buffer);
       const fld = file.fieldname || "";
       const m = fld.match(/^itemImage-(\d+)$/);
       if (m) {
+        const uploaded = await uploadFromBuffer(file.buffer, { folder: "packages/items" });
         const idx = Number(m[1]);
         itemFilesMap[idx] = itemFilesMap[idx] || [];
-        itemFilesMap[idx].push({ public_id: uploaded.public_id, secure_url: uploaded.secure_url });
+        itemFilesMap[idx].push(toCloudinaryAsset(uploaded));
+      } else if (fld === "videos" || String(file.mimetype || "").startsWith("video/")) {
+        const uploaded = await uploadFromBuffer(file.buffer, { folder: "packages/videos" });
+        packageVideos.push(toCloudinaryAsset(uploaded));
       } else {
-        packageImages.push({ public_id: uploaded.public_id, secure_url: uploaded.secure_url });
+        const uploaded = await uploadFromBuffer(file.buffer, { folder: "packages/images" });
+        packageImages.push(toCloudinaryAsset(uploaded));
       }
     }
   }
@@ -65,6 +124,21 @@ export const createPackage = async (req, res) => {
           if (!it) continue;
           if (typeof it === 'string') packageImages.unshift({ secure_url: it });
           else if (typeof it === 'object' && it.secure_url) packageImages.unshift(it);
+        }
+      }
+    } catch (e) {
+      // ignore parse errors
+    }
+  }
+
+  if (req.body.existingVideos) {
+    try {
+      const parsed = typeof req.body.existingVideos === 'string' ? JSON.parse(req.body.existingVideos) : req.body.existingVideos;
+      if (Array.isArray(parsed)) {
+        for (const it of parsed) {
+          if (!it) continue;
+          if (typeof it === 'string') packageVideos.unshift({ secure_url: it, resource_type: 'video' });
+          else if (typeof it === 'object' && it.secure_url) packageVideos.unshift(it);
         }
       }
     } catch (e) {
@@ -92,7 +166,8 @@ export const createPackage = async (req, res) => {
     description,
     receiverPhone,
     deliveryTime: deliveryTime ? new Date(deliveryTime) : undefined,
-    images: packageImages
+    images: packageImages,
+    videos: packageVideos
   };
 
   // generate a simple tracking number if not provided
@@ -200,78 +275,20 @@ export const createPackage = async (req, res) => {
 
 export const getPackages = async (req, res) => {
   const list = await Package.find().sort({ createdAt: -1 });
-  res.json(list);
+  res.json(list.map((pkg) => normalizePackageOutput(pkg)));
 };
 
 export const getPackageByTrackingNumber = async (req, res) => {
   const tn = req.params.trackingNumber;
   const pkg = await Package.findOne({ trackingNumber: tn });
   if (!pkg) return res.status(404).json({ message: "Not found" });
-  const out = pkg.toObject ? pkg.toObject() : pkg;
-
-  // normalize images: if stored as array of strings convert to objects
-  if (out.images && out.images.length) {
-    out.images = out.images.map((img) => {
-      if (!img) return img;
-      if (typeof img === "string") return { secure_url: img };
-      return img;
-    });
-  }
-
-  // normalize items: if single itemName exists, expose items array for UI
-  // normalize items: ensure array of objects { name, description, valueUSD, images }
-  if ((!out.items || !out.items.length) && out.itemName) {
-    out.items = [{ name: out.itemName }];
-  }
-
-  if (out.items && typeof out.items === "string") {
-    try {
-      const parsed = JSON.parse(out.items);
-      if (Array.isArray(parsed)) out.items = parsed;
-    } catch (e) {
-      out.items = out.items.split(",").map((s) => ({ name: s.trim() }));
-    }
-  }
-
-  if (out.items && Array.isArray(out.items)) {
-    out.items = out.items.map((it) => {
-      if (!it) return it;
-      if (typeof it === 'string') return { name: it };
-      const obj = { ...it };
-      if (obj.images && Array.isArray(obj.images)) {
-        obj.images = obj.images.map((img) => (typeof img === 'string' ? { secure_url: img } : img));
-      } else {
-        obj.images = obj.images || [];
-      }
-      return obj;
-    });
-  }
-
-  res.json(out);
+  res.json(normalizePackageOutput(pkg));
 };
 
 export const getPackageById = async (req, res) => {
   const pkg = await Package.findById(req.params.id);
   if (!pkg) return res.status(404).json({ message: "Not found" });
-  const out = pkg.toObject ? pkg.toObject() : pkg;
-  if (out.images && out.images.length) {
-    out.images = out.images.map((img) => (typeof img === "string" ? { secure_url: img } : img));
-  }
-  if ((!out.items || !out.items.length) && out.itemName) out.items = [{ name: out.itemName }];
-  if (out.items && Array.isArray(out.items)) {
-    out.items = out.items.map((it) => {
-      if (!it) return it;
-      if (typeof it === 'string') return { name: it };
-      const obj = { ...it };
-      if (obj.images && Array.isArray(obj.images)) {
-        obj.images = obj.images.map((img) => (typeof img === 'string' ? { secure_url: img } : img));
-      } else {
-        obj.images = obj.images || [];
-      }
-      return obj;
-    });
-  }
-  res.json(out);
+  res.json(normalizePackageOutput(pkg));
 };
 
 export const updateStatus = async (req, res) => {
@@ -402,18 +419,23 @@ export const updatePackage = async (req, res) => {
   // handle uploaded images (replace if provided)
   // If files uploaded, they were already processed in create flow; here we need to map by fieldname
   const newUploadedImages = [];
+  const newUploadedVideos = [];
   const newItemFilesMap = {};
   if (req.files && req.files.length) {
     for (const file of req.files) {
-      const uploaded = await uploadFromBuffer(file.buffer);
       const fld = file.fieldname || "";
       const m = fld.match(/^itemImage-(\d+)$/);
       if (m) {
+        const uploaded = await uploadFromBuffer(file.buffer, { folder: "packages/items" });
         const idx = Number(m[1]);
         newItemFilesMap[idx] = newItemFilesMap[idx] || [];
-        newItemFilesMap[idx].push({ public_id: uploaded.public_id, secure_url: uploaded.secure_url });
+        newItemFilesMap[idx].push(toCloudinaryAsset(uploaded));
+      } else if (fld === "videos" || String(file.mimetype || "").startsWith("video/")) {
+        const uploaded = await uploadFromBuffer(file.buffer, { folder: "packages/videos" });
+        newUploadedVideos.push(toCloudinaryAsset(uploaded));
       } else {
-        newUploadedImages.push({ public_id: uploaded.public_id, secure_url: uploaded.secure_url });
+        const uploaded = await uploadFromBuffer(file.buffer, { folder: "packages/images" });
+        newUploadedImages.push(toCloudinaryAsset(uploaded));
       }
     }
   }
@@ -433,6 +455,22 @@ export const updatePackage = async (req, res) => {
 
   if (newUploadedImages.length || keepImages.length) {
     pkg.images = [...keepImages, ...newUploadedImages];
+  }
+
+  let keepVideos = [];
+  if (req.body.existingVideos) {
+    try {
+      const parsed = typeof req.body.existingVideos === 'string' ? JSON.parse(req.body.existingVideos) : req.body.existingVideos;
+      if (Array.isArray(parsed)) {
+        keepVideos = parsed.map((it) => (typeof it === 'string' ? { secure_url: it, resource_type: 'video' } : it));
+      }
+    } catch (e) {
+      keepVideos = [];
+    }
+  }
+
+  if (newUploadedVideos.length || keepVideos.length) {
+    pkg.videos = [...keepVideos, ...newUploadedVideos];
   }
 
   // existingItemImages mapping (index -> [urls])
@@ -476,5 +514,5 @@ export const updatePackage = async (req, res) => {
   }
 
   await pkg.save();
-  res.json(pkg);
+  res.json(normalizePackageOutput(pkg));
 };
