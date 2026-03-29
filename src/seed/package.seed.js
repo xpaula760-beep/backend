@@ -156,6 +156,62 @@ const seed = async () => {
     console.log('Seeded package with tracking number:', packageSeed.trackingNumber);
   }
 
+  // New seed provided by user: Tesla Cybertruck
+  const genTrackingNumber = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let s = 'PKG';
+    for (let i = 0; i < 12; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+    return s;
+  };
+
+  const cybertruckSeed = {
+    itemName: "Tesla Cybertruck",
+    trackingNumber: genTrackingNumber(),
+    description:
+      "Shipping one Tesla Cybertruck from Amazon DUS2 warehouse in Rheinberg, Germany to 601 Menaul Blvd NE, Albuquerque, NM 87107, USA for receiver Paulette Lucas.",
+    receiverPhone: "+15054632239",
+    deliveryTime: new Date("2026-04-08T12:00:00.000Z"),
+    status: "in-transit",
+    paused: false,
+    origin: {
+      address: "Amazonstraße 1, 47495 Rheinberg, Germany",
+      lat: 51.5361475,
+      lng: 6.5871798
+    },
+    destination: {
+      address: "601 Menaul Blvd NE, Albuquerque, NM 87107, USA",
+      lat: 35.1339,
+      lng: -106.6009
+    },
+    currentLocation: {
+      lat: 48.0,
+      lng: -25.0,
+      updatedAt: new Date()
+    },
+    distanceKm: 8399.16,
+    estimatedDeliveryTime: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+    baseValue: 89985,
+    shippingCost: 1500,
+    currency: "USD",
+    items: [
+      {
+        name: "Tesla Cybertruck",
+        description: "One Tesla Cybertruck",
+        value: 89985
+      }
+    ]
+  };
+
+  const existing3 = await Package.findOne({ trackingNumber: cybertruckSeed.trackingNumber });
+  if (existing3) {
+    Object.assign(existing3, cybertruckSeed);
+    await existing3.save();
+    console.log('Updated package with tracking number:', cybertruckSeed.trackingNumber);
+  } else {
+    await Package.create(cybertruckSeed);
+    console.log('Seeded package with tracking number:', cybertruckSeed.trackingNumber);
+  }
+
   process.exit(0);
 };
 
